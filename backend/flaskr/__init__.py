@@ -146,14 +146,15 @@ def create_app(test_config=None):
                     category=quiz_category['id']
                 ).filter(Question.id.notin_(previous_questions)).all()
 
-            if len(candidate_questions) == 0:
-                abort(404)
-
-            formatted_candidate_questions = [
-                candidate.format() for candidate in candidate_questions
-            ]
-            random_id = random.randint(0, len(candidate_questions) - 1)
-            new_question = formatted_candidate_questions[random_id]
+            # answered all questions
+            if len(candidate_questions) != 0:
+                formatted_candidate_questions = [
+                    candidate.format() for candidate in candidate_questions
+                ]
+                random_id = random.randint(0, len(candidate_questions) - 1)
+                new_question = formatted_candidate_questions[random_id]
+            else:
+                new_question = None
             # print(new_question)
 
             return jsonify({
