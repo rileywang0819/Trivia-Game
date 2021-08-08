@@ -7,6 +7,15 @@ from flaskr import create_app
 from models import setup_db, Question, Category
 
 
+DB_HOST = os.getenv('DB_HOST', 'localhost:5432')
+DB_USER = os.getenv('DB_USER', 'postgres')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
+DB_NAME = os.getenv('DB_NAME', 'trivia_test')
+DB_PATH = "postgresql://{}:{}@{}/{}".format(
+    DB_USER, DB_PASSWORD, DB_HOST, DB_NAME
+)
+
+
 class TriviaTestCase(unittest.TestCase):
     """This class represents the trivia test case"""
 
@@ -14,11 +23,8 @@ class TriviaTestCase(unittest.TestCase):
         """Define test variables and initialize app."""
         self.app = create_app()
         self.client = self.app.test_client
-        self.database_name = "trivia_test"
-        self.database_path = "postgresql://{}:{}@{}/{}".format(
-            'postgres', 'password', 'localhost:5432', self.database_name
-        )
-        setup_db(self.app, self.database_path)
+
+        setup_db(self.app, DB_PATH)
 
         # binds the app to the current context
         # with self.app.app_context():
@@ -32,7 +38,7 @@ class TriviaTestCase(unittest.TestCase):
         pass
 
     def test_get_paginated_categories(self):
-        """ Test getting all paginated categories. """
+        """ Test getting all categories. """
         response = self.client().get('/categories')
         data = json.loads(response.data)
 
@@ -92,7 +98,7 @@ class TriviaTestCase(unittest.TestCase):
     def test_delete_question(self):
         """ Test deleting the specific question. """
         before_delete = len(Question.query.all())
-        response = self.client().delete('questions/31')
+        response = self.client().delete('questions/16')
         after_delete = len(Question.query.all())
         data = json.loads(response.data)
 
@@ -102,7 +108,7 @@ class TriviaTestCase(unittest.TestCase):
 
     def test_404_failed_delete(self):
         """ Test deleting an inexistent question. """
-        response = self.client().delete('questions/24')
+        response = self.client().delete('questions/1000')
         data = json.loads(response.data)
 
         self.assertEqual(response.status_code, 404)
@@ -166,7 +172,7 @@ class TriviaTestCase(unittest.TestCase):
     def test_search_questions(self):
         """ Test searching for questions. """
         search_item = {
-            'searchTerm': 'sun'
+            'searchTerm': 'world'
         }
         response = self.client().post('/questions', json=search_item)
         data = json.loads(response.data)
@@ -177,14 +183,15 @@ class TriviaTestCase(unittest.TestCase):
 
     def test_failed_search(self):
         """ Test failing in searching question with inexistent string. """
-        response = self.client().post('/questions', json={'searchTerm': 'abcdef'})
+        response = self.client().post(
+            '/questions', json={'searchTerm': 'abcdef'})
         data = json.loads(response.data)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data['success'], True)
         self.assertEqual(data['totalQuestions'], 0)
-        
-        
+
+
 # Make the tests conveniently executable
 if __name__ == "__main__":
     unittest.main()
