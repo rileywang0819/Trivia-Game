@@ -121,6 +121,8 @@ If any exercise needs testing, navigate to the `./backend` folder and run the fo
 python test_flaskr.py
 ```
 
+**Note:** Don't forget creating tables in `trivia_test` database.
+
 ## API Reference
 
 Details in this [page](https://github.com/rileywang0819/Trivia-Game/blob/master/backend/README.md).
