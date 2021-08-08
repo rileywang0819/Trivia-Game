@@ -1,3 +1,4 @@
+import json
 import os
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -9,18 +10,37 @@ from models import setup_db, Question, Category
 QUESTIONS_PER_PAGE = 10
 
 # ----------------------------------------------------------------------------#
-# Pagination
+# Formatting
 # ----------------------------------------------------------------------------#
 
-def do_pagination(request, questions):
-    """ Paginate questions. """
-    page = request.args.get('page', 1, type=int)
-    start_id = (page - 1) * QUESTIONS_PER_PAGE
-    end_id = start_id + QUESTIONS_PER_PAGE
-    formatted_questions = [question.format() for question in questions]
-    current_questions = formatted_questions[start_id: end_id]
+def format_items(items):
+    """ Format the given items. """
+    formatted_items = [item.format() for item in items]
 
-    return current_questions
+    return formatted_items
+
+# ----------------------------------------------------------------------------#
+# Paginate Questions
+# ----------------------------------------------------------------------------#
+
+def paginate_questions(request, selected_items=None):
+    """ Paginate questions by controlling db operations. """
+    questions_limit = request.args.get('limit', QUESTIONS_PER_PAGE, type=int)
+    selected_page = request.args.get('page', 1, type=int)
+    start_index = (selected_page - 1) * questions_limit
+    end_index = start_index + QUESTIONS_PER_PAGE
+
+    if selected_items:
+        current_questions = selected_items[start_index: end_index]
+    else:
+        current_questions = \
+            Question.query.order_by(Question.id).limit(
+                questions_limit
+            ).offset(start_index).all()
+
+    formatted_current_questions = format_items(current_questions)
+
+    return formatted_current_questions
 
 # ----------------------------------------------------------------------------#
 # Create app
@@ -47,14 +67,21 @@ def create_app(test_config=None):
     @app.route('/categories')
     def get_paginated_categories():
         """ Get all vailable categories, paginated. """
-        categories = Category.query.order_by(Category.id).all()
-        current_categories = do_pagination(request, categories)
+        categories_limit = request.args.get('limit', QUESTIONS_PER_PAGE, type=int)
+        selected_page = request.args.get('page', 1, type=int)
+        start_index = (selected_page - 1) * categories_limit
+        
+        current_categories = \
+            Category.query.order_by(Category.id).limit(
+                categories_limit
+            ).offset(start_index).all()
 
         if len(current_categories) == 0:
             abort(404)
 
+        formatted_categories = format_items(current_categories)
         categories_dict = {}
-        for category in current_categories:
+        for category in formatted_categories:
             key = category['id']
             value = category['type']
             categories_dict[key] = value
@@ -67,8 +94,8 @@ def create_app(test_config=None):
     @app.route('/questions')
     def get_paginated_questions():
         """ Get all questions, paginated. """
-        questions = Question.query.order_by(Question.id).all()
-        current_questions = do_pagination(request, questions)
+        total_questions = len(Question.query.all())
+        current_questions = paginate_questions(request)
 
         if len(current_questions) == 0:
             abort(404)
@@ -81,7 +108,7 @@ def create_app(test_config=None):
         return jsonify({
             'success': True,
             'questions': current_questions,
-            'total_questions': len(questions),
+            'total_questions': total_questions,
             'categories': categories_dict,
             'current_category': None
         })
@@ -89,20 +116,21 @@ def create_app(test_config=None):
     @app.route('/categories/<int:category_id>/questions')
     def get_questions_by_category(category_id):
         """ Get questions based the chosen category. """
-        questions = Question.query.filter_by(
-            category=str(category_id)
-        ).order_by(Question.id).all()
-        current_questions = do_pagination(request, questions)
+        candidate_questions = \
+            Question.query.filter_by(
+                category=str(category_id)
+            ).order_by(Question.id).all()
 
-        if len(current_questions) == 0:
+        if len(candidate_questions) == 0:
             abort(404)
-
+            
+        current_questions = paginate_questions(request, candidate_questions)
         chosen_category = Category.query.get(category_id).type
 
         return jsonify({
             'success': True,
             'questions': current_questions,
-            'total_questions': len(questions),
+            'total_questions': len(candidate_questions),
             'current_category': chosen_category
         })
 
@@ -129,7 +157,7 @@ def create_app(test_config=None):
             answered questions.
         """
         body = request.get_json()
-        
+
         if body is None:
             abort(400)
 
@@ -165,28 +193,18 @@ def create_app(test_config=None):
             abort(422)
 
     @app.route('/questions', methods=['POST'])
-    def create_or_search_questions():
-        """ Create a new question or search questions. """
+    def create_new_question():
+        """ Create a new question. """
         body = request.get_json()
-        
+
         if body is None:
             abort(400)
-
-        try:
-            search_item = body.get('searchTerm', None)
-            if search_item:
-                candidate_questions = Question.query.order_by(Question.id).filter(
-                    Question.question.ilike('%{}%'.format(search_item))
-                ).all()
-                current_questions = do_pagination(request, candidate_questions)
-
-                return jsonify({
-                    'success': True,
-                    'questions': current_questions,
-                    'totalQuestions': len(candidate_questions),
-                    'currentCategory': None
-                })
-            else:
+        
+        if 'searchTerm' in body:
+            return search_questions(body)
+        else:
+            # print("**** Start Create ****")
+            try:
                 question = body.get('question', None)
                 answer = body.get('answer', None)
                 difficulty = body.get('difficulty', None)
@@ -202,6 +220,30 @@ def create_app(test_config=None):
                 return jsonify({
                     'success': True
                 })
+            except:
+                abort(422)
+
+    @app.route('/questions', methods=['POST'])
+    def search_questions(body):
+        """ Search questions based on search string. """
+        # print("**** Start Search ****")
+
+        search_string = body['searchTerm']
+        try:
+            if not search_string:
+                current_questions = paginate_questions(request)
+            else:
+                candidate_questions = Question.query.order_by(Question.id).filter(
+                    Question.question.ilike('%{}%'.format(search_string))
+                ).all()
+                current_questions = paginate_questions(request, candidate_questions)
+
+            return jsonify({
+                'success': True,
+                'questions': current_questions,
+                'totalQuestions': len(candidate_questions),
+                'currentCategory': None
+            })
         except:
             abort(422)
 
